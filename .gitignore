@@ -18,6 +18,11 @@
 .DS_Store
 *.pem
 
+# cursor (local AI context, do not commit)
+.cursorrules
+AI_CONTEXT.md
+PROMPTS_CURSOR.md
+
 # debug
 npm-debug.log*
 yarn-debug.log*
