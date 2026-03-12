@@ -1,0 +1,356 @@
+// Phase 1: Foundation + Chat (Team, TeamMember, ChatMessage)
+// Use Supabase Postgres - set DATABASE_URL in .env
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FacilityMemberRole {
+  Admin
+  Staff
+  Viewer
+}
+
+enum SectionStatus {
+  Active
+  Inactive
+}
+
+model User {
+  id        String   @id @default(cuid())
+  authId    String   @unique // Supabase auth user id
+  email     String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  facilityMembers FacilityMember[]
+  sectionMembers  SectionMember[]
+  teamMembers     TeamMember[]
+  chatMessages    ChatMessage[]
+}
+
+model Facility {
+  id        String   @id @default(cuid())
+  name      String
+  dba       String?
+  owner     String?
+  contactName String?
+  contactEmail String?
+  contactPhone String?
+  mailingAddress String?
+  settings  Json?   // startOfWeek, systemOfMeasurement, dateFormat, timeFormat, primaryAnimalIdentifierType
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members        FacilityMember[]
+  teams          Team[]
+  sections       Section[]
+  labels         Label[]
+  customListTypes CustomListType[]
+  species        Species[]
+  animals        Animal[]
+  businesses     Business[]
+  medicalRecords MedicalRecord[]
+  dailyReports   DailyReport[]
+}
+
+model FacilityMember {
+  id         String            @id @default(cuid())
+  facilityId String
+  userId     String
+  role       FacilityMemberRole @default(Staff)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, userId])
+  @@index([facilityId])
+  @@index([userId])
+}
+
+model Team {
+  id         String   @id @default(cuid())
+  facilityId String
+  name       String
+  slug       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  facility Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  members  TeamMember[]
+  messages ChatMessage[]
+
+  @@unique([facilityId, slug])
+  @@index([facilityId])
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+model Section {
+  id                   String        @id @default(cuid())
+  facilityId            String
+  parentId              String?
+  name                  String
+  sortOrder             Int           @default(0)
+  dailyReportsEnabled   Boolean       @default(false)
+  status                SectionStatus @default(Active)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  facility      Facility        @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  parent        Section?        @relation("SectionTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Section[]       @relation("SectionTree")
+  members       SectionMember[]
+  animals       Animal[]
+  dailyReports  DailyReport[]
+}
+
+model SectionMember {
+  id          String   @id @default(cuid())
+  sectionId   String
+  userId      String
+  designation String? // e.g. Primary, Secondary
+  createdAt   DateTime @default(now())
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, userId])
+  @@index([sectionId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  teamId    String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([teamId, createdAt])
+}
+
+// Phase 2: Animals, Medical, Daily Reports; Phase 4: Labels, Custom lists, Business
+enum LabelType {
+  general
+  section
+  medical
+  business
+  animal
+  daily_report
+}
+
+model Label {
+  id         String    @id @default(cuid())
+  facilityId String
+  type       LabelType
+  text       String?
+  color      String    @default("#6b7280")
+  createdAt  DateTime  @default(now())
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId])
+  @@index([facilityId, type])
+}
+
+model CustomListType {
+  id         String   @id @default(cuid())
+  facilityId String
+  slug       String   // e.g. disposition, gender, breeding_status, drugs, vaccines
+  name       String
+  createdAt  DateTime @default(now())
+
+  facility Facility        @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  items    CustomListItem[]
+}
+
+model CustomListItem {
+  id          String   @id @default(cuid())
+  listTypeId  String
+  value       String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  listType CustomListType @relation(fields: [listTypeId], references: [id], onDelete: Cascade)
+
+  @@index([listTypeId])
+}
+
+model Species {
+  id         String   @id @default(cuid())
+  facilityId String
+  binomial   String?  // genus species
+  commonName String?
+  createdAt  DateTime @default(now())
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  animals  Animal[]
+}
+
+model Animal {
+  id                String    @id @default(cuid())
+  facilityId        String
+  sectionId         String
+  speciesId         String?
+  name              String?
+  identifiers       Json?     // [{ type: string, value: string }]
+  disposition       String?   // from custom list
+  dispositionDate   DateTime?
+  dispositionNote   String?
+  birthDate         DateTime?
+  birthDateEstimate Boolean   @default(false)
+  weight            String?
+  weightUnit        String?
+  gender            String?
+  breedingStatus    String?
+  primaryColor      String?
+  secondaryColor    String?
+  uniqueMarkings    String?
+  note              String?
+  labelIds          Json?     // string[]
+  acquisitionDate   DateTime?
+  acquisitionMethod String?
+  acquisitionPrice  String?
+  acquisitionSourceId String? // Business id
+  acquisitionDiet    String?
+  acquisitionNote   String?
+  transferDate      DateTime?
+  transferMethod    String?
+  transferPrice     String?
+  transferDestId    String?
+  transferNote      String?
+  attachmentKeys    Json?     // string[] Supabase storage keys
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  facility   Facility       @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  section    Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  species    Species?       @relation(fields: [speciesId], references: [id], onDelete: SetNull)
+  medicalRecords MedicalRecord[]
+}
+
+model Business {
+  id         String   @id @default(cuid())
+  facilityId String
+  type       String   // from custom list: Veterinarian, Exhibitor, etc.
+  name       String
+  owner      String?
+  contactName String?
+  contactEmail String?
+  mailingAddress String?
+  physicalAddress String?
+  websiteUrl String?
+  note       String?
+  labelIds   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  facility         Facility         @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  medicalRecords   MedicalRecord[]
+}
+
+model MedicalRecord {
+  id                  String   @id @default(cuid())
+  facilityId          String
+  animalId            String
+  veterinarianId      String?
+  vetVisit            Boolean  @default(false)
+  routineVaccination  Boolean  @default(false)
+  recordDate          DateTime
+  weight              String?
+  weightUnit          String?
+  problemDescription  String?
+  diagnosis           String?
+  treatmentDescription String?
+  foodGiven           String?
+  foodAmountGiven     String?
+  foodAmountEaten     String?
+  stoolQuality        String?
+  dietInformation    String?
+  note                String?
+  labelIds            Json?
+  attachmentKeys      Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  facility     Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  animal       Animal       @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  veterinarian Business?    @relation(fields: [veterinarianId], references: [id], onDelete: SetNull)
+  drugs        MedicalRecordDrug[]
+  vaccines     MedicalRecordVaccine[]
+}
+
+model MedicalRecordDrug {
+  id              String   @id @default(cuid())
+  medicalRecordId String
+  drug            String?
+  dosage          String?
+  frequency       String?
+  createdAt       DateTime @default(now())
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+model MedicalRecordVaccine {
+  id              String   @id @default(cuid())
+  medicalRecordId String
+  vaccine         String?
+  createdAt       DateTime @default(now())
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+model DailyReport {
+  id           String   @id @default(cuid())
+  facilityId   String
+  sectionId    String
+  date         DateTime @db.Date
+  importance   String   @default("Normal") // Normal, Important, Critical
+  staffEntries Json?    // [{ userId, designation }]
+  weather      String?
+  highTemp     String?
+  lowTemp      String?
+  humidity     String?
+  labelIds     Json?
+  notes        Json?    // [{ type, content }]
+  subsectionNotes Json? // [{ sectionId, notes }]
+  attachmentKeys Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  section  Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sectionId, date])
+  @@index([facilityId])
+  @@index([sectionId, date])
+}
